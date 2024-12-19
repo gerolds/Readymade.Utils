@@ -1,0 +1,24 @@
+﻿{
+  "name": "com.anglebracket.readymade-utils",
+  "version": "0.1.0",
+  "displayName": "Readymade.Utils",
+  "description": "A collection of shared patterns, systems and structures for the Readymade group of packages.",
+  "unity": "6000.0",
+  "unityRelease": "0",
+  "documentationUrl": "https://github.com/gerolds/Readymade.Utils",
+  "changelogUrl": "https://github.com/gerolds/Readymade.Utils/CHANGELOG.md",
+  "licensesUrl": "https://github.com/gerolds/Readymade.Utils/LICENSE",
+  "dependencies": {
+  },
+  "keywords": [
+    "Util",
+    "Pattern",
+    "Datastructure",
+    "Helper"
+  ],
+  "author": {
+    "name": "Gerold Schneider",
+    "email": "",
+    "url": "https://github.com/gerolds"
+  }
+}
