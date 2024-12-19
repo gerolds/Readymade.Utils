@@ -1,0 +1,22 @@
+{
+  "name": "Readymade.Utils.Editor",
+  "rootNamespace": "",
+  "references": [
+    "UnityEngine.UI",
+    "Unity.TextMeshPro.Editor",
+    "Unity.TextMeshPro",
+    "Unity.InputSystem",
+    "Readymade.Utils"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

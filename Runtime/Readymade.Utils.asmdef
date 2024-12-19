@@ -1,0 +1,23 @@
+{
+  "name": "Readymade.Utils",
+  "rootNamespace": "",
+  "references": [
+    "NaughtyAttributes.Core",
+    "UniTask",
+    "Unity.InputSystem",
+    "Unity.TextMeshPro",
+    "Unity.Mathematics",
+    "Vertx.Debugging.Runtime",
+    "DOTween.Modules",
+    "MaterialSymbols"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
