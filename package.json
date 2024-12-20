@@ -12,8 +12,10 @@
     "com.vertx.debugging": "2.3.0",
     "com.cysharp.unitask": "2.5.0",
     "com.dbrizov.naughtyattributes": "2.1.0",
+    "com.unity.uiextensions": "2.3.2",
     "com.unity.inputsystem": "1.11.2",
-    "com.unity.ugui": "2.0.0"
+    "com.unity.ugui": "2.0.0",
+    "com.convalise.unity-material-symbols": "218.0.0"
   },
   "keywords": [
     "Util",
