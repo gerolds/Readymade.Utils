@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using Cysharp.Threading.Tasks.Triggers;
-using Sirenix.Utilities;
 using UnityEngine;
 
 namespace Readymade.Utils.Patterns
@@ -30,8 +29,16 @@ namespace Readymade.Utils.Patterns
         }
 #endif
 
-        public static void Lock()
+        public static void Lock(GameObject bindTo)
         {
+            Debug.Assert(bindTo);
+            bindTo.OnDestroyAsync()
+                .ContinueWith(() =>
+                {
+                    Debug.Log($"[{nameof(Services)}] unlocked");
+                    return s_isLocked = false;
+                })
+                .Forget();
             s_isLocked = true;
         }
 
@@ -69,8 +76,8 @@ namespace Readymade.Utils.Patterns
 
             return instance;
         }
-        
-        public static bool TryGet<T>( out T instance)
+
+        public static bool TryGet<T>(out T instance)
         {
             instance = default;
             if (!s_services.TryGetValue(typeof(T), out object service))
@@ -119,14 +126,14 @@ namespace Readymade.Utils.Patterns
                 BindToAsync<T>(component.gameObject).Forget();
             }
 
-            Debug.Log($"[{nameof(Services)}] Registered {typeof(T).GetNiceName()}.");
+            Debug.Log($"[{nameof(Services)}] Registered {typeof(T)}.");
         }
 
         private static async UniTaskVoid BindToAsync<T>(GameObject bindTo)
         {
             await bindTo.OnDestroyAsync();
             s_services.Remove(typeof(T));
-            Debug.Log($"[{nameof(Services)}] Unregistered {typeof(T).GetNiceName()}.");
+            Debug.Log($"[{nameof(Services)}] Unregistered {typeof(T)}.");
         }
 
         public static void Register<T>(Func<T> factory, Mode mode = Mode.Single, GameObject bindTo = default)
