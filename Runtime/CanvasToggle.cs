@@ -20,6 +20,7 @@
  */
 
 using System;
+using Cysharp.Threading.Tasks;
 #if ODIN_INSPECTOR
 using Sirenix.OdinInspector;
 #else
@@ -151,8 +152,17 @@ namespace Readymade.Utils
         [Tooltip("Called whenever the internal enabled state of the canvas changes.")]
         public CanvasEnabledUnityEvent onChanged;
 
+        [BoxGroup("Debugging")]
+        [SerializeField]
+        [Tooltip(
+            "Whether to log debug information. This is helpful to see what state change request are received by the " +
+            "component, since implementation is deferred to the end of the frame, tracing is otherwise difficult.")]
+        private bool debug;
+
         private Selectable _lastSelected;
-        private bool _triggeredThisFrame;
+        private bool _isDirty;
+        private bool _nextState;
+        private float _lastChanged;
 
         /// <summary>
         /// Called whenever the internal enabled state of the canvas changes.
@@ -188,7 +198,22 @@ namespace Readymade.Utils
         /// This value is unaffected by the enabled state of this component and the active state of
         /// the GameObject.
         /// </remarks>
-        public bool IsEnabled => targetCanvas.enabled;
+        public bool IsEnabled => targetCanvas && (targetCanvas.enabled || _isDirty && _nextState);
+        
+        /// <summary>
+        /// Whether the canvas will be enabled in the next frame.
+        /// </summary>
+        public bool WillBeEnabled => targetCanvas && _isDirty && _nextState;
+
+        /// <summary>
+        /// Whether the canvas will have a different state in the next frame.
+        /// </summary>
+        public bool WillBeDifferent => targetCanvas && _isDirty && _nextState != targetCanvas.enabled;
+
+        /// <summary>
+        /// Time since the last state change.
+        /// </summary>
+        public float SinceLastChanged => Time.time - _lastChanged;
 
         private void OnValidate()
         {
@@ -217,253 +242,64 @@ namespace Readymade.Utils
             }
         }
 
-        private void Update()
+        private void LateUpdate()
         {
-            _triggeredThisFrame = false;
-        }
-
-        private void OnEnable()
-        {
-            // subscribe to signals
-
-            if (IsHandlingSignals)
-            {
-                SubscribeToSignalSources();
-            }
-
-            // set initial state
-
-            if (toggle)
-            {
-                toggle.SetIsOnWithoutNotify(startEnabled);
-            }
-
-            if (targetCanvas)
-            {
-                SetEnabled(startEnabled);
-            }
-        }
-
-        private void OnDisable()
-        {
-            UnsubscribeSignalSources();
-        }
-
-        private void UnsubscribeSignalSources()
-        {
-            // unsubscribe signals
-
-            if (toggleAction != null)
-            {
-                toggleAction.performed -= ToggleActionHandler;
-            }
-
-            if (closeAction != null)
-            {
-                closeAction.performed -= CloseActionHandler;
-            }
-
-            if (toggleActionReference != null)
-            {
-                toggleActionReference.action.performed -= ToggleActionHandler;
-            }
-
-            if (closeActionReference != null)
-            {
-                closeActionReference.action.performed -= CloseActionHandler;
-            }
-
-            if (openButton != null)
-            {
-                openButton.onClick.RemoveListener(OpenSignalHandler);
-            }
-
-            if (closeButton != null)
-            {
-                closeButton.onClick.RemoveListener(CloseSignalHandler);
-            }
-
-            if (toggle != null)
-            {
-                toggle.onValueChanged.RemoveListener(SignalEnabled);
-            }
-        }
-
-        private void SubscribeToSignalSources()
-        {
-            if (toggleAction != null)
-            {
-                toggleAction.performed += ToggleActionHandler;
-                toggleAction.Enable();
-            }
-
-            if (closeAction != null)
-            {
-                closeAction.performed += CloseActionHandler;
-                closeAction.Enable();
-            }
-
-            if (toggleActionReference != null)
-            {
-                toggleActionReference.action.performed += ToggleActionHandler;
-                if (enableActions)
-                {
-                    toggleActionReference.action.Enable();
-                }
-            }
-
-            if (closeActionReference != null)
-            {
-                closeActionReference.action.performed += CloseActionHandler;
-                if (enableActions)
-                {
-                    closeActionReference.action.Enable();
-                }
-            }
-
-            if (openButton != null)
-            {
-                openButton.onClick.AddListener(SignalToggle);
-            }
-
-            if (closeButton != null)
-            {
-                closeButton.onClick.AddListener(CloseSignalHandler);
-            }
-
-            if (toggle != null)
-            {
-                toggle.onValueChanged.AddListener(SignalEnabled);
-            }
-        }
-
-        private void ToggleActionHandler(InputAction.CallbackContext ctx)
-        {
-            if (ctx.action.WasPressedThisFrame())
-            {
-                SignalToggle();
-            }
-        }
-
-        private void CloseActionHandler(InputAction.CallbackContext ctx)
-        {
-            if (ctx.action.WasPressedThisFrame())
-            {
-                SignalEnabled(false);
-            }
-        }
-
-        private void OpenSignalHandler() => SignalEnabled(true);
-
-        private void CloseSignalHandler() => SignalEnabled(false);
-
-        /// <summary>
-        /// Toggles the enabled state of the canvas. A call to this method will be interpreted as a signal,
-        /// consequently the <see cref="SignalReceived"/> and <see cref="Changed"/> event will be invoked.
-        /// Calling this method in response to <see cref="SignalReceived"/> will result in a stack overflow.
-        /// </summary>
-        /// <remarks>
-        /// This is an internal method that is provided as a hook for extensions to this base implementation.
-        /// </remarks>
-        public void SignalToggle()
-        {
-            if (!targetCanvas)
+            if (!_isDirty)
             {
                 return;
             }
 
-            SignalEnabled(!targetCanvas.enabled);
+            _isDirty = false;
+
+            ApplyNextState();
         }
 
-        /// <summary>
-        /// Sets the enabled state of the canvas. A call to this method will be interpreted as a signal,
-        /// consequently the <see cref="SignalReceived"/> and <see cref="Changed"/> event will be invoked.
-        /// Calling this method in response to <see cref="SignalReceived"/> will result in a stack overflow.
-        /// </summary>
-        /// <param name="isOn">The desired enabled state of the canvas.</param>
-        /// <remarks>
-        /// This is an internal method that is provided as a hook for extensions to this base implementation.
-        /// </remarks>
-        /// <seealso cref="SetEnabled"/>
-        public void SignalEnabled(bool isOn)
+        private void ApplyNextState()
         {
-            if (!targetCanvas)
-            {
-                return;
-            }
-
-            if (handleSignalsExternally)
-            {
-                if (isSignalSource)
-                {
-                    SignalReceived?.Invoke(isOn);
-                }
-            }
-            else
-            {
-                SetEnabled(isOn);
-            }
-        }
-
-        /// <summary>
-        /// Toggles the enabled state of the canvas. A call to this method will <b>not</b> be interpreted as a signal,
-        /// consequently only <see cref="Changed"/> event will be invoked.
-        /// </summary>
-        /// <param name="isEnabled">The desired enabled state of the canvas.</param>
-        /// <seealso cref="SignalEnabled"/>
-        public void SetEnabled(bool isEnabled)
-        {
-            if (!targetCanvas)
-            {
-                return;
-            }
-
-            if (_triggeredThisFrame)
-            {
-                return;
-            }
-
-            // will be reset in update
-            _triggeredThisFrame = true;
-
             if (group)
             {
-                group.interactable = isEnabled;
-                group.blocksRaycasts = isEnabled;
+                group.interactable = _nextState;
+                group.blocksRaycasts = _nextState;
             }
 
             if (toggle)
             {
-                if (toggle.group.allowSwitchOff)
+                if (toggle.group && toggle.group.allowSwitchOff)
                 {
                     toggle.group.SetAllTogglesOff();
                 }
 
-                toggle.SetIsOnWithoutNotify(isEnabled);
+                toggle.SetIsOnWithoutNotify(_nextState);
             }
 
             if (closeButton)
             {
-                closeButton.interactable = isEnabled;
+                closeButton.interactable = _nextState;
             }
 
-            if (targetCanvas.enabled != isEnabled)
+            if (targetCanvas.enabled != _nextState)
             {
-                targetCanvas.enabled = isEnabled;
+                _lastChanged = Time.time;
+                targetCanvas.enabled = _nextState;
+
+                if (debug)
+                {
+                    Debug.Log($"[{nameof(CanvasToggle)}] {targetCanvas.name} enabled: {_nextState}");
+                }
 
                 if (audioSource)
                 {
-                    if (openSfx && isEnabled)
+                    if (openSfx && _nextState)
                     {
                         audioSource.PlayOneShot(openSfx);
                     }
 
-                    if (closeSfx && !isEnabled)
+                    if (closeSfx && !_nextState)
                     {
                         audioSource.PlayOneShot(closeSfx);
                     }
 
-                    if (loopSfx && isEnabled)
+                    if (loopSfx && _nextState)
                     {
                         audioSource.clip = loopSfx;
                         audioSource.Stop();
@@ -477,13 +313,13 @@ namespace Readymade.Utils
                         }
                     }
 
-                    if (!isEnabled)
+                    if (!_nextState)
                     {
                         audioSource.Stop();
                     }
                 }
 
-                if (isEnabled)
+                if (_nextState)
                 {
                     if (restoreLastSelected && _lastSelected)
                     {
@@ -523,6 +359,287 @@ namespace Readymade.Utils
 
                 onChanged?.Invoke(targetCanvas.enabled);
                 Changed?.Invoke(targetCanvas.enabled);
+            }
+        }
+
+        private void OnEnable()
+        {
+            // subscribe to signals
+
+            if (isSignalSource)
+            {
+                SubscribeToSignalSources();
+            }
+
+            // set initial state
+
+            if (toggle)
+            {
+                toggle.SetIsOnWithoutNotify(startEnabled);
+            }
+
+            if (targetCanvas)
+            {
+                SetEnabled(startEnabled);
+            }
+        }
+
+        private void OnDisable()
+        {
+            UnsubscribeSignalSources();
+        }
+
+        private void UnsubscribeSignalSources()
+        {
+            // unsubscribe signals
+
+            if (toggleAction != null)
+            {
+                toggleAction.performed -= ToggleActionHandler;
+            }
+
+            if (closeAction != null)
+            {
+                closeAction.performed -= CloseActionHandler;
+            }
+
+            if (toggleActionReference != null)
+            {
+                toggleActionReference.action.performed -= ToggleActionHandler;
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Unsubscribed {nameof(ToggleActionHandler)} of '{name}' from InputAction '{toggleActionReference.action.actionMap.name}/{toggleActionReference.action.name}'",
+                        this);
+                }
+            }
+
+            if (closeActionReference != null)
+            {
+                closeActionReference.action.performed -= CloseActionHandler;
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Unsubscribed {nameof(CloseActionHandler)} of '{name}' from InputAction '{closeActionReference.action.actionMap.name}/{closeActionReference.action.name}'",
+                        this);
+                }
+            }
+
+            if (openButton != null)
+            {
+                openButton.onClick.RemoveListener(OpenSignalHandler);
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Unsubscribed {nameof(OpenSignalHandler)} of '{name}' from Button '{openButton.name}'",
+                        this);
+                }
+            }
+
+            if (closeButton != null)
+            {
+                UniTask x;
+                closeButton.onClick.RemoveListener(CloseSignalHandler);
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Unsubscribed {nameof(CloseSignalHandler)} of '{name}' from Button '{closeButton.name}'",
+                        this);
+                }
+            }
+
+            if (toggle != null)
+            {
+                toggle.onValueChanged.RemoveListener(SignalEnabled);
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Unsubscribed {nameof(SignalEnabled)} of {name} from Toggle '{toggle.name}'",
+                        this);
+                }
+            }
+        }
+
+        private void SubscribeToSignalSources()
+        {
+            if (toggleAction != null)
+            {
+                toggleAction.performed += ToggleActionHandler;
+                toggleAction.Enable();
+            }
+
+            if (closeAction != null)
+            {
+                closeAction.performed += CloseActionHandler;
+                closeAction.Enable();
+            }
+
+            if (toggleActionReference != null)
+            {
+                toggleActionReference.action.performed += ToggleActionHandler;
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Subscribed {nameof(ToggleActionHandler)} of '{name}' to InputAction '{toggleActionReference.action.actionMap.name}/{toggleActionReference.action.name}'",
+                        this);
+                }
+
+                if (enableActions)
+                {
+                    toggleActionReference.action.Enable();
+                }
+            }
+
+            if (closeActionReference != null)
+            {
+                closeActionReference.action.performed += CloseActionHandler;
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Subscribed {nameof(CloseActionHandler)} of '{name}' to InputAction '{closeActionReference.action.actionMap.name}/{closeActionReference.action.name}'",
+                        this);
+                }
+
+                if (enableActions)
+                {
+                    closeActionReference.action.Enable();
+                }
+            }
+
+            if (openButton != null)
+            {
+                openButton.onClick.AddListener(SignalToggle);
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Subscribed {nameof(SignalToggle)} of '{name}' to Button '{openButton.name}'",
+                        this);
+                }
+            }
+
+            if (closeButton != null)
+            {
+                closeButton.onClick.AddListener(CloseSignalHandler);
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Subscribed {nameof(CloseSignalHandler)} of '{name}' to Button '{closeButton.name}'",
+                        this);
+                }
+            }
+
+            if (toggle != null)
+            {
+                toggle.onValueChanged.AddListener(SignalEnabled);
+                if (debug)
+                {
+                    Debug.Log(
+                        $"[{nameof(CanvasToggle)}] Subscribed {nameof(SignalEnabled)} of '{name}' to Toggle '{toggle.name}'",
+                        this);
+                }
+            }
+        }
+
+        private void ToggleActionHandler(InputAction.CallbackContext ctx)
+        {
+            if (ctx.action.WasPressedThisFrame())
+            {
+                SignalToggle();
+            }
+        }
+
+        private void CloseActionHandler(InputAction.CallbackContext ctx)
+        {
+            if (ctx.action.WasPressedThisFrame())
+            {
+                SignalEnabled(false);
+            }
+        }
+
+        private void OpenSignalHandler() => SignalEnabled(true);
+
+        private void CloseSignalHandler() => SignalEnabled(false);
+
+        /// <summary>
+        /// Toggles the enabled state of the canvas. A call to this method will be interpreted as a signal,
+        /// consequently the <see cref="SignalReceived"/> and <see cref="Changed"/> event will be invoked.
+        /// Calling this method in response to <see cref="SignalReceived"/> will result in a stack overflow.
+        /// </summary>
+        /// <remarks>
+        /// This is an internal method that is provided as a hook for extensions to this base implementation.
+        /// </remarks>
+        public void SignalToggle()
+        {
+            if (!targetCanvas)
+            {
+                Debug.LogWarning(
+                    $"[{nameof(CanvasToggle)}] {targetCanvas.name} has ignored a signal: Only one signal per frame is allowed.",
+                    this);
+                return;
+            }
+
+            SignalEnabled(!targetCanvas.enabled);
+        }
+
+        /// <summary>
+        /// Sets the enabled state of the canvas. A call to this method will be interpreted as a signal,
+        /// consequently the <see cref="SignalReceived"/> and <see cref="Changed"/> event will be invoked.
+        /// Calling this method in response to <see cref="SignalReceived"/> will result in a stack overflow.
+        /// </summary>
+        /// <param name="isOn">The desired enabled state of the canvas.</param>
+        /// <remarks>
+        /// This is an internal method that is provided as a hook for extensions to this base implementation.
+        /// </remarks>
+        /// <seealso cref="SetEnabled"/>
+        public void SignalEnabled(bool isOn)
+        {
+            if (!targetCanvas)
+            {
+                Debug.LogWarning(
+                    $"[{nameof(CanvasToggle)}] {targetCanvas.name} has ignored signal {(isOn ? "ON" : "OFF")}, no target canvas assigned.",
+                    this);
+                return;
+            }
+
+            if (handleSignalsExternally)
+            {
+                if (isSignalSource)
+                {
+                    //Debug.Assert(SignalReceived != null, "No SignalReceived subscriber found while configured to handle signals externally.", this);
+                    SignalReceived?.Invoke(isOn);
+                }
+            }
+            else
+            {
+                SetEnabled(isOn);
+            }
+        }
+
+        /// <summary>
+        /// Toggles the enabled state of the canvas. A call to this method will <b>not</b> be interpreted as a signal,
+        /// consequently only <see cref="Changed"/> event will be invoked.
+        /// </summary>
+        /// <param name="isOn">The desired enabled state of the canvas.</param>
+        /// <seealso cref="SignalEnabled"/>
+        public void SetEnabled(bool isOn)
+        {
+            if (!targetCanvas)
+            {
+                Debug.LogWarning(
+                    $"[{nameof(CanvasToggle)}] {targetCanvas.name} has ignored signal {(isOn ? "ON" : "OFF")}, no target canvas assigned.",
+                    this);
+                return;
+            }
+
+            // will be reset in update
+            _isDirty = true;
+            _nextState = isOn;
+
+            if (debug)
+            {
+                Debug.Log(
+                    $"[{nameof(CanvasToggle)}] {targetCanvas.name} enabled state will be changed to {(isOn ? "ON" : "OFF")}.",
+                    this);
             }
         }
     }
